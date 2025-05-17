@@ -1,75 +1,52 @@
+using System;
 using UnityEngine;
-using System.Collections;
+using UnityEngine.Events;
 
 public class BallCollisionHandler : MonoBehaviour
 {
-    private Rigidbody rb;
-    private Vector3 startPosition;
-    private Quaternion startRotation;
-    public PlayerController playerController;
+    [NonSerialized] public GameManager gameManager;
+    
     public float resetDelay = 0.5f;
+    public UnityEvent onGoalScored;
 
     void Start()
     {
-        rb = GetComponent<Rigidbody>();
-        startPosition = transform.position;
-        startRotation = transform.rotation;
-        if (playerController == null)
+    }
+
+    public void SetGameManager(GameManager manager)
+    {
+        gameManager = manager;
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.gameObject.CompareTag("Goal"))
         {
-            Debug.LogError("Не назначена ссылка на PlayerController в BallCollisionHandler!");
+            onGoalScored?.Invoke();
+            Invoke(nameof(ResetGame), resetDelay);
         }
     }
 
-    private void OnCollisionEnter(Collision collision)
+    private void ResetGame()
     {
-        if (collision.gameObject.CompareTag("Goal"))
+        if (gameManager != null)
         {
-            StartCoroutine(ResetAfterDelay());
-        }
-    }
+            gameManager.ResetGame();
 
-    IEnumerator ResetAfterDelay()
-    {
-        yield return new WaitForSeconds(resetDelay);
-        ResetBall();
-        ResetPlayer();
-    }
-
-    void ResetBall()
-    {
-        rb.linearVelocity = Vector3.zero;
-        rb.angularVelocity = Vector3.zero;
-        transform.position = startPosition;
-        transform.rotation = startRotation;
-    }
-
-    private void ResetPlayer()
-    {
-        if (playerController != null && playerController.initialPlayerPosition != null)
-        {
-            playerController.transform.position = playerController.initialPlayerPosition.position;
-            playerController.canKick = true;
-            if (playerController.ball != null)
+            BallMovement ballMovement = GetComponent<BallMovement>();
+            if (ballMovement != null)
             {
-                AimArrowController arrowController = playerController.ball.GetComponent<AimArrowController>();
-                if (arrowController != null)
-                {
-                    arrowController.ShowArrow();
-                    arrowController.SetIsAiming(true);
-                }
-                else if (playerController.ball.transform.parent != null && playerController.ball.transform.parent.Find("ArrowPivot") != null)
-                {
-                    GameObject arrowPivotObject = playerController.ball.transform.parent.Find("ArrowPivot").gameObject;
-                    if (arrowPivotObject != null)
-                    {
-                        arrowPivotObject.SetActive(true);
-                    }
-                }
+                ballMovement.StopMovement();
+                ballMovement.transform.localPosition = Vector3.zero;
+            }
+            else
+            {
+                Debug.LogError("BallCollisionHandler: BallMovement component not found on the ball!");
             }
         }
         else
         {
-            Debug.LogError("Не установлена initialPlayerPosition или не назначена ссылка на PlayerController.");
+            Debug.LogError("BallCollisionHandler: GameManager not assigned!");
         }
     }
 }

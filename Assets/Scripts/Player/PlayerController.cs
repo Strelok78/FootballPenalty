@@ -1,136 +1,160 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
-using UnityEngine.Events;
 
-[System.Serializable]
-public class KickEvent : UnityEvent<InputAction.CallbackContext> {}
+public enum PlayerState
+{
+    Idle,
+    MovingToBall,
+    CanKick,
+    Kicked
+}
 
 public class PlayerController : MonoBehaviour
 {
-    public float moveSpeed = 5f;
-    public float kickForce = 10f;
-    public Transform ball; // Ссылка на объект мяча
-    public Transform initialBallPosition;
-    public Transform initialPlayerPosition;
-    public bool canKick = true; // Флаг, разрешающий удар (public)
-    private AimArrowController aimArrowController; // Ссылка на контроллер стрелки
-    private bool isMovingToBall = false; // Флаг, показывающий, что игрок бежит к мячу
-    private Vector3 targetPosition; // Объявляем targetPosition на уровне класса
+    private float moveSpeed;
+    private float minKickForce;
+    private float maxKickForce;
+    private Transform ball;
+    private GameObject goal;
+    public PlayerState currentState = PlayerState.Idle;
+    private Player.GoalTargetSelector goalTargetSelector;
+    private float variableKickForce;
+    private Vector3 kickTargetPoint;
+    private Vector3 moveDirection = Vector3.zero;
+    private bool isMoving = false;
 
-    public KickEvent onKick;
+    public bool IsMoving => isMoving;
+    public bool isActive = false;
 
-    void Start()
+    public void Initialize(Transform ballTransform, GameObject goalObject, float moveSpeedValue, float minForce, float maxForce)
     {
-        if (ball != null)
+        ball = ballTransform;
+        goal = goalObject;
+        moveSpeed = moveSpeedValue;
+        minKickForce = minForce;
+        maxKickForce = maxForce;
+
+        goalTargetSelector = GetComponent<Player.GoalTargetSelector>();
+        if (goalTargetSelector == null)
         {
-            aimArrowController = ball.GetComponent<AimArrowController>();
-            if (aimArrowController == null)
+            Debug.LogError("PlayerController: GoalTargetSelector not found on the player prefab!");
+        }
+
+        PrepareForNextKick();
+        currentState = PlayerState.CanKick;
+    }
+
+    private void Update()
+    {
+        // Добавлено: Проверка на столкновения с другими игроками
+        if (isActive && currentState == PlayerState.MovingToBall && isMoving)
+        {
+            if (CheckForPlayerCollision())
             {
-                Debug.LogError("AimArrowController не найден на объекте Ball!");
+                // Временно останавливаем текущего игрока, если есть столкновение
+                moveDirection = Vector3.zero;
+                isMoving = false;  //  <--  ВАЖНО:  Останавливаем движение!
+                Debug.Log($"Player {gameObject.name}: Potential collision detected. Temporarily stopping.");
             }
             else
             {
-                aimArrowController.ShowArrow();
-                aimArrowController.SetIsAiming(true); // Стрелка двигается при старте
+                MoveToBall();
             }
         }
-        else
+        Debug.Log($"Player: {gameObject.name}, isActive: {isActive}, currentState: {currentState}, isMoving: {isMoving}");
+    }
+
+    private void MoveToBall()
+    {
+        transform.position += moveDirection * moveSpeed * Time.deltaTime;
+
+        float distanceToBallXZ = Vector2.Distance(new Vector2(transform.position.x, transform.position.z), new Vector2(ball.position.x, ball.position.z));
+        if (distanceToBallXZ < 0.6f)
         {
-            Debug.LogError("Не назначена ссылка на объект Ball!");
+            currentState = PlayerState.Kicked;
+            KickBall();
+            isMoving = false;
         }
     }
 
-    void Update()
+    private Vector3 CalculateDirectionToTarget(Vector3 start, Vector3 target)
     {
-        if (isMovingToBall)
-        {
-            Vector3 directionToBall = (targetPosition - transform.position).normalized;
-            transform.position += directionToBall * moveSpeed * Time.deltaTime;
+        return new Vector3(target.x - start.x, 0f, target.z - start.z).normalized;
+    }
 
-            float distanceToBall = Vector3.Distance(transform.position, targetPosition);
-            if (distanceToBall < 0.6f)
+    // Изменено: Убрана логика переключения isActive.
+    public void OnPlayerClicked()
+    {
+        Debug.Log($"Player {gameObject.name} clicked. isActive: {isActive}");
+
+        if (currentState == PlayerState.CanKick)
+        {
+            if (!isMoving)
             {
-                isMovingToBall = false;
-                KickBall(aimArrowController.GetKickDirection());
-                canKick = false;
-                aimArrowController.HideArrow();
+                currentState = PlayerState.MovingToBall;
+                moveDirection = CalculateDirectionToTarget(transform.position, ball.position);
+                isMoving = true;
             }
             else
             {
-                if (aimArrowController != null)
-                {
-                    aimArrowController.SetIsAiming(false); // Стрелка фиксируется во время бега
-                }
+                StopMoving();
             }
         }
-        else
+        else if (currentState == PlayerState.MovingToBall && isMoving)
         {
-            if (aimArrowController != null)
-            {
-                aimArrowController.SetIsAiming(true); // Стрелка двигается, когда игрок стоит
-            }
+            StopMoving();
         }
     }
 
-    public void OnKickInput(InputAction.CallbackContext context)
+    private void StopMoving()
     {
-        if (context.performed && canKick)
+        isMoving = false;
+        moveDirection = Vector3.zero;
+        currentState = PlayerState.CanKick;
+        // Сообщаем GameManager, что игрок больше не активен:
+        FindAnyObjectByType<GameManager>().SetActivePlayer(null); // передаем null для сброса активного игрока
+    }
+
+    public void PrepareForNextKick()
+    {
+        if (goalTargetSelector != null)
         {
-            if (!isMovingToBall)
-            {
-                // Начинаем движение к мячу
-                isMovingToBall = true;
-                targetPosition = ball.position;
-                if (aimArrowController != null)
-                {
-                    aimArrowController.SetIsAiming(false); // Фиксируем стрелку, когда игрок начинает движение
-                }
-            }
-            else
-            {
-                // Останавливаем движение к мячу
-                isMovingToBall = false;
-                if (aimArrowController != null)
-                {
-                    aimArrowController.SetIsAiming(true); // Стрелка двигается, когда игрок стоит
-                }
-            }
+            (Vector3 targetPoint, float kickForce) = goalTargetSelector.SelectTargetPoint(minKickForce, maxKickForce);
+            kickTargetPoint = targetPoint;
+            variableKickForce = kickForce;
         }
     }
 
-    void KickBall(Vector3 kickDirection)
+    void KickBall()
     {
-        Rigidbody ballRb = ball.GetComponent<Rigidbody>();
-        if (ballRb != null)
+        BallMovement ballMovement = ball.GetComponent<BallMovement>();
+        if (ballMovement != null)
         {
-            ballRb.AddForce(kickDirection * kickForce, ForceMode.Impulse);
+            ballMovement.SetTarget(kickTargetPoint, variableKickForce);
         }
         else
         {
-            Debug.LogError("У объекта Ball отсутствует компонент Rigidbody!");
+            Debug.LogError("PlayerController: BallMovement component not found on the ball!");
         }
     }
 
-    public void ResetPlayerPosition()
+    // Новый метод проверки столкновений
+    private bool CheckForPlayerCollision()
     {
-        if (initialPlayerPosition != null)
+        float minDistance = 0.4f;  // Уменьшено минимальное расстояние между игроками
+        // Исправлено: Используем FindObjectsByType
+        foreach (PlayerController otherPlayer in FindObjectsByType<PlayerController>(FindObjectsSortMode.None))
         {
-            transform.position = initialPlayerPosition.position;
-            canKick = true;
-            isMovingToBall = false;
-            if (aimArrowController != null)
+            if (otherPlayer != this && (otherPlayer.isMoving || isMoving))  // Проверяем всех двигающихся игроков, и тех, кто уже в движении.
             {
-                aimArrowController.ShowArrow();
-                aimArrowController.SetIsAiming(true);
-            }
-            else if (ball != null && ball.transform.Find("ArrowPivot") != null)
-            {
-                ball.transform.Find("ArrowPivot").gameObject.SetActive(true);
+                float distance = Vector3.Distance(transform.position, otherPlayer.transform.position);
+                if (distance < minDistance)
+                {
+                    // Сообщаем GameManager о столкновении
+                    FindAnyObjectByType<GameManager>().HandlePlayerCollision();
+                    return true;  // Обнаружено столкновение
+                }
             }
         }
-        else
-        {
-            Debug.LogError("Не установлена initialPlayerPosition для Player.");
-        }
+        return false; // Столкновений нет
     }
 }
