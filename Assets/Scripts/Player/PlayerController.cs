@@ -10,9 +10,11 @@ public enum PlayerState
 
 public class PlayerController : MonoBehaviour
 {
-    private float moveSpeed;
-    private float minKickForce;
-    private float maxKickForce;
+    [Header("Player Settings")]
+    [SerializeField] private float moveSpeed = 5f;
+    [SerializeField] private float minKickForce = 5f;
+    [SerializeField] private float maxKickForce = 15f;
+
     private Transform ball;
     private GameObject goal;
     public PlayerState currentState = PlayerState.Idle;
@@ -21,17 +23,15 @@ public class PlayerController : MonoBehaviour
     private Vector3 kickTargetPoint;
     private Vector3 moveDirection = Vector3.zero;
     private bool isMoving = false;
+    private Vector3 targetPosition;
 
     public bool IsMoving => isMoving;
     public bool isActive = false;
 
-    public void Initialize(Transform ballTransform, GameObject goalObject, float moveSpeedValue, float minForce, float maxForce)
+    public void Initialize(Transform ballTransform, GameObject goalObject)
     {
         ball = ballTransform;
         goal = goalObject;
-        moveSpeed = moveSpeedValue;
-        minKickForce = minForce;
-        maxKickForce = maxForce;
 
         goalTargetSelector = GetComponent<Player.GoalTargetSelector>();
         if (goalTargetSelector == null)
@@ -52,66 +52,114 @@ public class PlayerController : MonoBehaviour
             {
                 // Временно останавливаем текущего игрока, если есть столкновение
                 moveDirection = Vector3.zero;
-                isMoving = false;  //  <--  ВАЖНО:  Останавливаем движение!
+                isMoving = false;
                 Debug.Log($"Player {gameObject.name}: Potential collision detected. Temporarily stopping.");
             }
             else
             {
-                MoveToBall();
+                MoveToTarget();
             }
         }
         Debug.Log($"Player: {gameObject.name}, isActive: {isActive}, currentState: {currentState}, isMoving: {isMoving}");
     }
-
-    private void MoveToBall()
+    
+    private void MoveToTarget()
     {
-        transform.position += moveDirection * moveSpeed * Time.deltaTime;
+        // Запоминаем текущую позицию игрока по Y
+        float currentY = transform.position.y;
+        
+        // Перемещаем игрока только по X и Z
+        Vector3 nextPosition = Vector3.MoveTowards(new Vector3(transform.position.x, 0, transform.position.z), 
+                                                 new Vector3(targetPosition.x, 0, targetPosition.z), 
+                                                 moveSpeed * Time.deltaTime);
 
-        float distanceToBallXZ = Vector2.Distance(new Vector2(transform.position.x, transform.position.z), new Vector2(ball.position.x, ball.position.z));
-        if (distanceToBallXZ < 0.6f)
+        transform.position = new Vector3(nextPosition.x, currentY, nextPosition.z);
+
+        //  Проверяем расстояние по XZ, чтобы не учитывать Y.
+        if (Vector2.Distance(new Vector2(transform.position.x, transform.position.z), new Vector2(targetPosition.x, targetPosition.z)) < 0.1f)
         {
-            currentState = PlayerState.Kicked;
-            KickBall();
-            isMoving = false;
+            if (currentState == PlayerState.MovingToBall)
+            {
+                currentState = PlayerState.Kicked;
+                KickBall();
+                isMoving = false;
+            }
+            else
+            {
+                isMoving = false;
+            }
         }
     }
+
+    // Метод для первого игрока (движение прямо к мячу)
+    private void SetTargetForMoveToBall()
+    {
+        targetPosition = ball.position;
+    }
+
+    // Метод для остальных игроков (обход очереди и движение к мячу)
+    public void MoveAroundQueueAndToBall()
+    {
+        if (currentState != PlayerState.CanKick) return; // Двигаемся только если можно бить
+
+        currentState = PlayerState.MovingToBall;
+        isMoving = true;
+
+        // Определяем позицию в очереди (предполагаем, что игроки располагаются вдоль Z)
+        float queuePositionZ = transform.position.z;
+        Vector3 spawnPointPosition = FindAnyObjectByType<GameManager>().playerSpawnPoint.position;
+
+        // Точки обхода
+        Vector3 rightOfQueue = spawnPointPosition + Vector3.right * 3f + Vector3.forward * queuePositionZ;  // Справа от очереди
+        Vector3 behindBall = ball.position + Vector3.back * 2f;  // Позади мяча
+        
+        StartCoroutine(MoveToPoints(new Vector3[] { rightOfQueue, behindBall, ball.position }));
+    }
+
+    private System.Collections.IEnumerator MoveToPoints(Vector3[] points)
+    {
+        for (int i = 0; i < points.Length; i++)
+        {
+            targetPosition = points[i];
+            while (Vector3.Distance(transform.position, targetPosition) > 0.1f)
+            {
+                yield return null;
+            }
+        }
+        KickBall();
+        isMoving = false;
+    }
+
 
     private Vector3 CalculateDirectionToTarget(Vector3 start, Vector3 target)
     {
         return new Vector3(target.x - start.x, 0f, target.z - start.z).normalized;
     }
-
-    // Изменено: Убрана логика переключения isActive.
+    
     public void OnPlayerClicked()
     {
-        Debug.Log($"Player {gameObject.name} clicked. isActive: {isActive}");
-
-        if (currentState == PlayerState.CanKick)
+        GameManager gameManager = FindAnyObjectByType<GameManager>();
+        if (gameManager.activePlayer == null || gameManager.activePlayer == this) // Если нет активного или клик по активному
         {
-            if (!isMoving)
+            if (currentState == PlayerState.CanKick && !isMoving)
             {
                 currentState = PlayerState.MovingToBall;
                 moveDirection = CalculateDirectionToTarget(transform.position, ball.position);
                 isMoving = true;
-            }
-            else
-            {
-                StopMoving();
+                SetTargetForMoveToBall();
             }
         }
-        else if (currentState == PlayerState.MovingToBall && isMoving)
+        else
         {
-            StopMoving();
+            MoveAroundQueueAndToBall(); // Движение для игроков не из очереди
         }
     }
-
+    
     private void StopMoving()
     {
         isMoving = false;
         moveDirection = Vector3.zero;
         currentState = PlayerState.CanKick;
-        // Сообщаем GameManager, что игрок больше не активен:
-        FindAnyObjectByType<GameManager>().SetActivePlayer(null); // передаем null для сброса активного игрока
     }
 
     public void PrepareForNextKick()
@@ -130,6 +178,8 @@ public class PlayerController : MonoBehaviour
         if (ballMovement != null)
         {
             ballMovement.SetTarget(kickTargetPoint, variableKickForce);
+            // Добавлено: Удаление игрока
+            Destroy(gameObject);
         }
         else
         {

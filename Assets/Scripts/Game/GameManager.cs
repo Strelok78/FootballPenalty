@@ -4,12 +4,6 @@ using System.Collections.Generic;
 
 public class GameManager : MonoBehaviour
 {
-    [Header("Player Settings")]
-    public float playerMoveSpeed = 5f;
-    public float minKickForce = 5f;
-    public float maxKickForce = 15f;
-    public float playerZSpacing = -2f;
-
     [Header("Game Objects")]
     public GameObject playerPrefab;
     public GameObject ballPrefab;
@@ -32,10 +26,9 @@ public class GameManager : MonoBehaviour
     private GameObject ballObject;
     private float timeSinceLastSpawn = 0f;
     private float nextSpawnTime = 0f;
-    private PlayerController activePlayer = null; // Добавлено: ссылка на активного игрока
-    private float timeSinceLastReduction = 0f; // Время с последнего уменьшения интервала
+    public PlayerController activePlayer = null;
+    private float timeSinceLastReduction = 0f;
 
-    // Добавлено: отображение текущего максимального интервала в инспекторе
     [Header("Debug")]
     [SerializeField]
     private float currentMaxSpawnInterval;
@@ -44,7 +37,7 @@ public class GameManager : MonoBehaviour
     {
         InitializeGame();
         CalculateNextSpawnTime();
-        currentMaxSpawnInterval = maxSpawnInterval; // Инициализируем отображаемое значение
+        currentMaxSpawnInterval = maxSpawnInterval;
     }
 
     private void InitializeGame()
@@ -56,11 +49,7 @@ public class GameManager : MonoBehaviour
         }
 
         ballObject = Instantiate(ballPrefab, ballSpawnPoint.position, ballSpawnPoint.rotation, ballSpawnPoint);
-
-        // Создаем только первого игрока при инициализации
         CreatePlayer();
-        // Удаляем вызов SetActivePlayer
-        // SetActivePlayer(players[0]); 
 
         BallCollisionHandler ballCollisionHandler = ballObject.GetComponent<BallCollisionHandler>();
         if (ballCollisionHandler != null)
@@ -82,7 +71,6 @@ public class GameManager : MonoBehaviour
             CalculateNextSpawnTime();
         }
 
-        // Уменьшаем максимальное время появления с интервалом
         timeSinceLastReduction += Time.deltaTime;
         if (timeSinceLastReduction >= intervalReductionInterval)
         {
@@ -99,117 +87,96 @@ public class GameManager : MonoBehaviour
 
     private void CalculateNextSpawnTime()
     {
-        nextSpawnTime = Random.Range(minSpawnInterval, currentMaxSpawnInterval); // Используем текущий максимальный интервал
+        nextSpawnTime = Random.Range(minSpawnInterval, currentMaxSpawnInterval);
         timeSinceLastSpawn = 0f;
     }
 
-    private void CreatePlayer()
+   private void CreatePlayer()
     {
-        Vector3 spawnPosition = playerSpawnPoint.position + Vector3.forward * (players.Count * playerZSpacing);
-        // Instantiate() должен принимать префаб игрока
-        GameObject playerObject = Instantiate(playerPrefab, spawnPosition, playerSpawnPoint.rotation, playerSpawnPoint);
-        PlayerController newPlayer = playerObject.GetComponent<PlayerController>();
-
-        if (newPlayer == null)
+        //  Перед итерацией создаём новый список, куда не попадут уничтоженные игроки.
+        List<PlayerController> validPlayers = new List<PlayerController>();
+        foreach (PlayerController player in players)
         {
-            Debug.LogError("GameManager: PlayerController not found on instantiated player prefab!");
-            return;
+            if (player != null) // Проверка на null (уничтоженные объекты == null)
+            {
+                validPlayers.Add(player);
+            }
         }
+        players = validPlayers;  // Обновляем список игроков
 
-        Debug.Log($"GameManager: Player created at: {spawnPosition}, Total players: {players.Count}");
-        players.Add(newPlayer);
-
-        // Здесь вызываем Initialize
-        newPlayer.Initialize(ballObject.transform, goal, playerMoveSpeed, minKickForce, maxKickForce);
-
-        // Получаем PlayerClickHandler и передаем ссылку на GameManager
-        PlayerClickHandler playerClickHandler = playerObject.GetComponent<PlayerClickHandler>();
-        if (playerClickHandler != null)
+        int maxAttempts = 10;
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
-            playerClickHandler.gameManager = this;
+            // Изменено:  Используем остаток от деления, чтобы организовать игроков в несколько рядов (пример).
+            //  Можно изменить формулу для получения другой схемы расположения.
+            int row = players.Count / 3; // Например, 3 игрока в ряд
+            int col = players.Count % 3;
+            Vector3 spawnPosition = playerSpawnPoint.position + Vector3.forward * (row * -2f) + Vector3.right * (col * 1.5f);
+            
+            //  Вместо:
+            //  Vector3 spawnPosition = playerSpawnPoint.position + Vector3.forward * (players.Count * playerZSpacing);
+            
+            bool positionTaken = false;
+            foreach (PlayerController existingPlayer in players)
+            {
+                if (Vector3.Distance(spawnPosition, existingPlayer.transform.position) < 0.5f)
+                {
+                    positionTaken = true;
+                    break;
+                }
+            }
+
+            if (!positionTaken)
+            {
+                GameObject playerObject = Instantiate(playerPrefab, spawnPosition, playerSpawnPoint.rotation, playerSpawnPoint);
+                PlayerController newPlayer = playerObject.GetComponent<PlayerController>();
+
+                if (newPlayer == null)
+                {
+                    Debug.LogError("GameManager: PlayerController not found on instantiated player prefab!");
+                    return;
+                }
+
+                Debug.Log($"GameManager: Player created at: {spawnPosition}, Total players: {players.Count}");
+                players.Add(newPlayer);
+                newPlayer.Initialize(ballObject.transform, goal);
+
+                PlayerClickHandler playerClickHandler = playerObject.GetComponent<PlayerClickHandler>();
+                if (playerClickHandler != null)
+                {
+                    playerClickHandler.gameManager = this;
+                }
+                else
+                {
+                    Debug.LogError("GameManager: PlayerClickHandler not found on instantiated player prefab!");
+                }
+                return;
+            }
+            else
+            {
+                Debug.LogWarning($"GameManager: Spawn position taken, trying to adjust.");
+            }
         }
-        else
-        {
-            Debug.LogError("GameManager: PlayerClickHandler not found on instantiated player prefab!");
-        }
+        Debug.LogError("GameManager: Could not find a free spawn position after " + maxAttempts + " attempts!");
     }
-
     public void ResetGame()
     {
-        // Перемещаем мяч в начальное положение
         ballObject.transform.localPosition = Vector3.zero;
+        ballObject.SetActive(true);
 
-        // Сбрасываем физику мяча
         Rigidbody ballRigidbody = ballObject.GetComponent<Rigidbody>();
         if (ballRigidbody != null)
         {
-            ballRigidbody.linearVelocity = Vector3.zero;         // Обнуляем скорость
-            ballRigidbody.angularVelocity = Vector3.zero;  // Обнуляем вращение
-            // Если нужно - можно отключить гравитацию, а затем включить в BallMovement при ударе
-            // ballRigidbody.useGravity = false;  
+            ballRigidbody.linearVelocity = Vector3.zero;
+            ballRigidbody.angularVelocity = Vector3.zero;
+            ballRigidbody.WakeUp();
         }
         else
         {
             Debug.LogError("GameManager: Ball Rigidbody not found!");
         }
-
-        // Удаляем первого игрока (который только что ударил)
-        if (players.Count > 0)
-        {
-            Destroy(players[0].gameObject);
-            players.RemoveAt(0);
-
-            // Сдвигаем оставшихся игроков в очереди ближе к мячу
-            MovePlayersInQueue();
-        }
     }
 
-    // Вариант 2: Перемещение игроков через корутину
-    private void MovePlayersInQueue()
-    {
-        StartCoroutine(MovePlayersSmoothly());
-        Debug.Log("GameManager: Starting smooth player queue movement.");
-    }
-
-    private IEnumerator MovePlayersSmoothly()
-    {
-        float moveDuration = 0.5f; // Время перемещения в секундах
-        float elapsedTime = 0f;
-
-        // Создаем копию списка игроков
-        List<PlayerController> playersToMove = new List<PlayerController>(players);
-
-        Dictionary<PlayerController, Vector3> targetPositions = new Dictionary<PlayerController, Vector3>();
-        for (int i = 0; i < playersToMove.Count; i++)
-        {
-            targetPositions[playersToMove[i]] = playerSpawnPoint.position + Vector3.forward * (i * playerZSpacing);
-        }
-
-        while (elapsedTime < moveDuration)
-        {
-            elapsedTime += Time.deltaTime;
-            float t = elapsedTime / moveDuration; // Нормализованное время от 0 до 1
-
-            for (int i = 0; i < playersToMove.Count; i++)
-            {
-                playersToMove[i].transform.position = Vector3.Lerp(playersToMove[i].transform.position,
-                    targetPositions[playersToMove[i]], t);
-            }
-
-            yield return null; // Ждем следующий кадр
-        }
-
-        // Убедимся, что игроки точно на своих местах после перемещения и устанавливаем isActive
-        for (int i = 0; i < playersToMove.Count; i++)
-        {
-            playersToMove[i].transform.position = targetPositions[playersToMove[i]];
-            playersToMove[i].isActive = (i == 0); // Новый активный игрок - первый в очереди
-        }
-
-        Debug.Log("GameManager: Finished smooth player queue movement.");
-    }
-
-    // Метод для установки активного игрока (будет вызываться после нажатия)
     public void SetActivePlayer(PlayerController player)
     {
         // if (activePlayer != null)
@@ -228,8 +195,7 @@ public class GameManager : MonoBehaviour
     public void HandlePlayerCollision()
     {
         Debug.Log("GameManager: Player collision detected. Stopping the game.");
-        Time.timeScale = 0; // Останавливаем время
-        // Дополнительно: Останавливаем мяч, если он должен остановиться вместе с игрой
+        Time.timeScale = 0;
         if (ballObject != null)
         {
             Rigidbody ballRigidbody = ballObject.GetComponent<Rigidbody>();
@@ -240,7 +206,6 @@ public class GameManager : MonoBehaviour
             }
         }
     }
-
     // Дополнительно: Метод для возобновления игры
     public void ResumeGame()
     {
