@@ -125,6 +125,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d639ec7d4fc3e45b3bd4c19a7f666e53, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  moveSpeed: 5
+  minKickForce: 5
+  maxKickForce: 15
+  indicatorPrefab: {fileID: 0}
   currentState: 0
   isActive: 0
 --- !u!114 &-7763615694948220521
@@ -139,6 +143,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d6aa8f5c95f7422694f743e6d96e19e6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  sectionMaterials:
+  - {fileID: 2100000, guid: 80dba7b402b52418f995cfc9bc334834, type: 2}
+  - {fileID: 2100000, guid: 004a7ea846d4241ae9feb376ac8d4af1, type: 2}
+  - {fileID: 2100000, guid: 9d0f753d1a2bc43b58b68d9e7f9d2603, type: 2}
 --- !u!114 &3893001777031952155
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -4,6 +4,9 @@ namespace Player
 {
     public class GoalTargetSelector : MonoBehaviour
     {
+        [Header("Goal Sections")]
+        [SerializeField] private Material[] sectionMaterials = new Material[3];
+
         // Метод для поиска цели по тегу
         private GameObject FindGoalObject()
         {
@@ -15,7 +18,7 @@ namespace Player
             return goalObject;
         }
 
-        public (Vector3, float) SelectTargetPoint(float minForce, float maxForce)
+        public (Vector3, float, int) SelectTargetPoint(float minForce, float maxForce)
         {
             GameObject goal = FindGoalObject();
             if (goal != null)
@@ -23,28 +26,51 @@ namespace Player
                 Collider goalCollider = goal.GetComponent<Collider>();
                 if (goalCollider != null)
                 {
-                    Vector3 center = goalCollider.bounds.center;
-                    Vector3 extents = goalCollider.bounds.extents;
+                    Bounds goalBounds = goalCollider.bounds;
+                    // Разделяем ворота на 3 зоны (вертикальные)
+                    float sectionWidth = goalBounds.size.x / 3f;
 
-                    float randomX = Random.Range(center.x - extents.x, center.x + extents.x);
-                    float randomY = Random.Range(center.y - extents.y, center.y + extents.y);
-                    float goalZ = center.z + extents.z;
+                    // Выбираем случайную зону
+                    int sectionIndex = Random.Range(0, 3);
 
-                    Vector3 targetPoint = new Vector3(randomX, randomY, goalZ);
+                    // Вычисляем центр выбранной зоны
+                    Vector3 sectionCenter = goalBounds.center;
+                    sectionCenter.x += sectionWidth * (sectionIndex - 1); // Смещаем по X относительно центра
+
+                    // Случайная точка внутри выбранной зоны
+                    Vector3 targetPoint = sectionCenter + new Vector3(Random.Range(-sectionWidth / 2f, sectionWidth / 2f),
+                                                                   Random.Range(-goalBounds.size.y / 2f, goalBounds.size.y / 2f), // Используем полную высоту ворот
+                                                                   goalBounds.extents.z);
+
                     float kickForce = Random.Range(minForce, maxForce);
 
-                    return (targetPoint, kickForce);
+                    // Возвращаем ещё и номер секции
+                    return (targetPoint, kickForce, sectionIndex);
                 }
                 else
                 {
                     Debug.LogError("GoalTargetSelector: Goal collider not found!");
-                    return (Vector3.forward * 10f, maxForce);
+                    return (Vector3.forward * 10f, maxForce, -1); // Возвращаем -1 как индикатор ошибки
                 }
             }
             else
             {
                 Debug.LogError("GoalTargetSelector: Goal object not assigned!");
-                return (Vector3.forward * 10f, maxForce);
+                return (Vector3.forward * 10f, maxForce, -1); // Возвращаем -1 как индикатор ошибки
+            }
+        }
+
+        // Метод для получения материала секции по индексу
+        public Material GetSectionMaterial(int index)
+        {
+            if (index >= 0 && index < sectionMaterials.Length)
+            {
+                return sectionMaterials[index];
+            }
+            else
+            {
+                Debug.LogError($"GoalTargetSelector: Invalid section index {index}.");
+                return null; // или возвращайте материал по умолчанию
             }
         }
     }

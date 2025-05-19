@@ -68,7 +68,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 7b201ee76b59549d8a9217a36f17b20e, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -150,12 +150,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c73710bddc3654bd28d55d88a11a21be, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  playerController: {fileID: 3823475896859699687, guid: cfa968d16032d440ab851bad30f92813, type: 3}
   resetDelay: 0.25
   onGoalScored:
     m_PersistentCalls:
       m_Calls: []
-  gameManager: {fileID: 2273995321356243103, guid: 9ab01fa75aa694eb3b6d5fe75f9556fa, type: 3}
 --- !u!114 &1786405894177712536
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -168,3 +166,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fa0e62c5ac13429d9176f50e2e78e261, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  gameManager: {fileID: 0}
