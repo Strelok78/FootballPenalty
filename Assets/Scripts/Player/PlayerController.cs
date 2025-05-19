@@ -123,13 +123,9 @@ public class PlayerController : MonoBehaviour
             variableKickForce = kickForce;
             MeshRenderer meshRenderer = GetComponent<MeshRenderer>();
             Material[] materials = meshRenderer.materials;
-            for (int i = 0; i < materials.Length; i++)
-            {
-                    // Создаем новый экземпляр материала, чтобы не изменять префаб.
-                    materials[i] = Instantiate(goalTargetSelector.GetSectionMaterial(materialIndex));
-                    meshRenderer.materials = materials; // Применяем изменения
-                    break;
-            }
+            materials[0] = Instantiate(goalTargetSelector.GetSectionMaterial(materialIndex));
+            meshRenderer.materials = materials;
+            Debug.Log("SSSS - " + materials.Length);
         }
     }
 
